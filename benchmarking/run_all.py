@@ -45,6 +45,39 @@ class Experiment:
     prerequisites: Tuple[str, ...] = ()
 
 
+MODEL_MODELSCOPE_IDS = {
+    "llama-7b": "LLM-Research/Llama-2-7b-hf",
+    "llama1-7b": "AI-ModelScope/llama-7b-hf",
+    "llama-1-7b": "AI-ModelScope/llama-7b-hf",
+    "llama2-7b": "LLM-Research/Llama-2-7b-hf",
+    "llama-2-7b": "LLM-Research/Llama-2-7b-hf",
+    "llama-2-7b-hf": "LLM-Research/Llama-2-7b-hf",
+}
+
+
+def resolve_model_path(model_name: Path, cache_dir: Path) -> Path:
+    """Return a local model directory, downloading from ModelScope if needed."""
+    model_name = Path(model_name).expanduser()
+    if model_name.is_dir():
+        return model_name.resolve()
+
+    model_id = MODEL_MODELSCOPE_IDS.get(str(model_name), str(model_name))
+    try:
+        try:
+            from modelscope import snapshot_download
+        except ImportError:
+            from modelscope.hub.snapshot_download import snapshot_download
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Model {model_name!r} is not a local directory; automatic download requires "
+            "the modelscope package. Install it with `pip install modelscope`."
+        ) from exc
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    downloaded = snapshot_download(model_id, cache_dir=str(cache_dir))
+    return Path(downloaded).resolve()
+
+
 EXPERIMENTS: Tuple[Experiment, ...] = (
     Experiment("fp16_matmul_baseline", BENCHMARK_DIR / "scripts" / "test_kernel_baselines.py"),
     Experiment("fp16_k_plus_rope", BENCHMARK_DIR / "scripts" / "test_kernel_benchmark_K_plus_rope.py"),
@@ -317,8 +350,8 @@ def preparation_commands(
     quantizer_path: Path,
     activation_path: Path,
 ) -> List[Tuple[str, Sequence[str], Path, Path]]:
-    if not args.model_path:
-        raise SystemExit("--prepare-artifacts requires --model-path")
+    if not args.model_name:
+        raise SystemExit("--prepare-artifacts requires --model-name")
     root = BENCHMARK_DIR.parent
     commands: List[Tuple[str, Sequence[str], Path, Path]] = []
 
@@ -452,7 +485,11 @@ def main() -> int:
     parser.add_argument("--plot", action="store_true", help="Create summary.csv and benchmark_summary.png after runs")
     parser.add_argument("--python", default=sys.executable, help="Python executable used for benchmark scripts")
     parser.add_argument("--prepare-artifacts", action="store_true", help="Generate Fisher info, quantizers.pickle, and activations before benchmarks")
-    parser.add_argument("--model-path", type=Path, default=None, help="Local HuggingFace-compatible LLaMA-7B checkpoint")
+    parser.add_argument(
+        "--model-name", "--model-path", dest="model_name", type=Path, default=Path("llama-7b"),
+        help="Project model name or ModelScope model ID; a local directory is also accepted",
+    )
+    parser.add_argument("--model-cache", type=Path, default=None, help="ModelScope cache directory (default: benchmarking/modelscope_models)")
     parser.add_argument("--fisher-path", type=Path, default=None, help="Fisher output directory (default: OUTPUT_DIR/fisher)")
     parser.add_argument("--fisher-num-examples", type=int, default=16, help="Calibration examples for Fisher/quantizer generation")
     parser.add_argument("--seqlen", type=int, choices=(2048,), default=2048, help="Calibration and activation sequence length")
@@ -475,6 +512,11 @@ def main() -> int:
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = (args.csv or output_dir / "results.csv").resolve()
+    model_cache = (args.model_cache or BENCHMARK_DIR / "modelscope_models").resolve()
+    if args.prepare_artifacts and not args.dry_run:
+        args.model_path = resolve_model_path(args.model_name, model_cache)
+    else:
+        args.model_path = args.model_name
     fisher_path = (args.fisher_path or output_dir / "fisher").resolve()
     quantizer_path = BENCHMARK_DIR / "quantizers.pickle"
     activation_path = BENCHMARK_DIR / f"activations-seqlen{args.seqlen}.pickle"
@@ -483,8 +525,6 @@ def main() -> int:
     if args.quant_python is None:
         args.quant_python = Path(args.python)
 
-    if args.model_path is not None:
-        args.model_path = args.model_path.resolve()
     args.gradient_python = args.gradient_python.resolve()
     args.quant_python = args.quant_python.resolve()
 
