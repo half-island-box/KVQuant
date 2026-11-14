@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 
@@ -7,10 +9,9 @@ def set_seed(seed):
     torch.random.manual_seed(seed)
 
 
-def get_wikitext2(nsamples, seed, seqlen, model):
-    from datasets import load_dataset
-    traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
-    testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+def get_wikitext2(nsamples, seed, seqlen, model, dataset_source="hf"):
+    traindata = _load_wikitext2_split("train", dataset_source)
+    testdata = _load_wikitext2_split("test", dataset_source)
 
     from transformers import AutoTokenizer 
     print('here1')
@@ -39,6 +40,41 @@ def get_wikitext2(nsamples, seed, seqlen, model):
         trainloader.append((inp, tar))
     print('here6')
     return trainloader, testenc
+
+
+MODELSCOPE_WIKITEXT2_DATASET = os.environ.get("KVQUANT_MODELSCOPE_WIKITEXT2_DATASET", "modelscope/wikitext")
+
+
+def _load_wikitext2_split(split: str, dataset_source: str):
+    if dataset_source == "modelscope":
+        try:
+            from modelscope.msdatasets import MsDataset
+        except ImportError as exc:
+            raise RuntimeError(
+                "dataset_source='modelscope' requires the modelscope package; "
+                "install it with `pip install modelscope`"
+            ) from exc
+
+        load_kwargs = {
+            "dataset_name": MODELSCOPE_WIKITEXT2_DATASET,
+            "subset_name": "wikitext-2-raw-v1",
+            "split": split,
+        }
+        candidates = [load_kwargs, {key: value for key, value in load_kwargs.items() if key != "subset_name"}]
+        errors = []
+        for kwargs in candidates:
+            try:
+                dataset = MsDataset.load(**kwargs)
+                return dataset.to_hf_dataset() if hasattr(dataset, "to_hf_dataset") else dataset
+            except Exception as exc:
+                errors.append(exc)
+        raise RuntimeError(
+            f"Unable to load {MODELSCOPE_WIKITEXT2_DATASET} from ModelScope; "
+            "set KVQUANT_MODELSCOPE_WIKITEXT2_DATASET to a valid ModelScope wikitext dataset ID"
+        ) from errors[-1]
+
+    from datasets import load_dataset
+    return load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
 
 def get_ptb(nsamples, seed, seqlen, model):
     from datasets import load_dataset
@@ -184,10 +220,10 @@ def get_c4_new(nsamples, seed, seqlen, model):
 
     return trainloader, valenc
 def get_loaders(
-    name, nsamples=128, seed=0, seqlen=2048, model=''
+    name, nsamples=128, seed=0, seqlen=2048, model='', dataset_source="hf"
 ):
     if 'wikitext2' in name:
-        return get_wikitext2(nsamples, seed, seqlen, model)
+        return get_wikitext2(nsamples, seed, seqlen, model, dataset_source=dataset_source)
     if 'ptb' in name:
         if 'new' in name:
             return get_ptb_new(nsamples, seed, seqlen, model)

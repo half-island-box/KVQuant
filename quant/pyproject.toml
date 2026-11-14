@@ -23,4 +23,7 @@ dependencies = [
     "matplotlib"
 ]
 
+[project.optional-dependencies]
+modelscope = ["modelscope>=1.14"]
+
 [tool.setuptools.packages.find]

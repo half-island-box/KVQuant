@@ -76,3 +76,30 @@ python summarize_benchmarks.py benchmark_results/<timestamp>/results.csv
 ```
 
 The dashboard reports mean runner wall time and the largest `cuda_time_avg` entry per run. Average per-call CUDA time is used because the experiments issue different numbers of kernel invocations; summing profiler rows would double-count parent/child entries and would not be directly comparable. The complete per-kernel data remains available in `results.csv`.
+
+### Generate benchmark artifacts through ModelScope
+
+If HuggingFace is unreachable, the wikitext2 loader can use ModelScope. Install ModelScope in each environment that loads calibration data:
+
+```bash
+pip install modelscope
+```
+
+Then pass `--dataset_source modelscope` to `run-fisher.py`, `llama_simquant.py`, or `cache-llama-activations.py`. By default `run_all.py --prepare-artifacts` uses ModelScope. The ModelScope dataset ID defaults to `modelscope/wikitext`; override it with:
+
+```bash
+export KVQUANT_MODELSCOPE_WIKITEXT2_DATASET=<valid-modelscope-wikitext2-dataset-id>
+```
+
+The integrated artifact generation command is:
+
+```bash
+python run_all.py \
+  --prepare-artifacts \
+  --model-path /path/to/llama-7b-hf \
+  --gradient-python /path/to/grad-env/bin/python \
+  --quant-python /path/to/kvquant-env/bin/python \
+  --plot
+```
+
+It sequentially generates Fisher information, `quantizers.pickle`, and `activations-seqlen2048.pickle`, then runs the benchmark experiments. Existing artifacts are reused unless `--force-artifacts` is passed.

@@ -20,6 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+modelscope = ["modelscope>=1.14"]
 plotting = ["matplotlib>=3.7"]
 
 [tool.setuptools.packages.find]

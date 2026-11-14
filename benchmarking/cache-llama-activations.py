@@ -222,6 +222,11 @@ if __name__ == '__main__':
         help='Sequence length for calibration / eval.'
     )
 
+    parser.add_argument(
+        '--dataset_source', type=str, choices=['hf', 'modelscope'], default='hf',
+        help='Dataset backend used for calibration activations.'
+    )
+
     #load quantizers for benchmarking
     parser.add_argument(
         '--quantizer-path', type=str, default='',
@@ -242,7 +247,12 @@ if __name__ == '__main__':
     model.eval()
 
     dataloader, testloader = get_loaders(
-        "wikitext2", nsamples=args.nsamples, seed=0, model=args.model, seqlen=model.seqlen
+        "wikitext2",
+        nsamples=args.nsamples,
+        seed=0,
+        model=args.model,
+        seqlen=model.seqlen,
+        dataset_source=args.dataset_source,
     )
 
     with open(args.quantizer_path, 'rb') as handle:

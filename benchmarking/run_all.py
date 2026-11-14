@@ -275,11 +275,12 @@ def missing_prerequisites(experiment: Experiment, check: bool) -> List[str]:
 def run_process(
     command: Sequence[str],
     timeout: Optional[float],
+    cwd: Path = BENCHMARK_DIR,
 ) -> Tuple[int, str, float]:
     started = time.monotonic()
     process = subprocess.Popen(
         command,
-        cwd=BENCHMARK_DIR,
+        cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -308,6 +309,108 @@ def run_process(
         returncode = process.returncode
     thread.join(timeout=2)
     return returncode, "".join(output_lines), time.monotonic() - started
+
+
+def preparation_commands(
+    args: argparse.Namespace,
+    fisher_path: Path,
+    quantizer_path: Path,
+    activation_path: Path,
+) -> List[Tuple[str, Sequence[str], Path, Path]]:
+    if not args.model_path:
+        raise SystemExit("--prepare-artifacts requires --model-path")
+    root = BENCHMARK_DIR.parent
+    commands: List[Tuple[str, Sequence[str], Path, Path]] = []
+
+    fisher_outputs = list(fisher_path.glob("pytorch_model*")) + list(fisher_path.glob("*.safetensors"))
+    if args.force_artifacts or not fisher_outputs:
+        commands.append(
+            (
+                "prepare_fisher",
+                [
+                    str(args.gradient_python),
+                    "run-fisher.py",
+                    "--model_name_or_path",
+                    str(args.model_path),
+                    "--output_dir",
+                    str(fisher_path),
+                    "--dataset",
+                    "wikitext2",
+                    "--dataset_source",
+                    args.dataset_source,
+                    "--seqlen",
+                    str(args.seqlen),
+                    "--maxseqlen",
+                    str(args.seqlen),
+                    "--num_examples",
+                    str(args.fisher_num_examples),
+                ],
+                root / "gradients",
+                fisher_path,
+            )
+        )
+
+    if args.force_artifacts or not quantizer_path.is_file():
+        commands.append(
+            (
+                "prepare_quantizers",
+                [
+                    str(args.quant_python),
+                    "llama_simquant.py",
+                    str(args.model_path),
+                    "--abits",
+                    "4",
+                    "--nsamples",
+                    str(args.fisher_num_examples),
+                    "--seqlen",
+                    str(args.seqlen),
+                    "--maxseqlen",
+                    str(args.seqlen),
+                    "--nuq",
+                    "--fisher",
+                    str(fisher_path),
+                    "--quantize",
+                    "--include_sparse",
+                    "--sparsity-threshold",
+                    "0.99",
+                    "--dataset_source",
+                    args.dataset_source,
+                    "--quantizer-path",
+                    str(quantizer_path),
+                ],
+                root / "quant",
+                quantizer_path,
+            )
+        )
+
+    if args.force_artifacts or not activation_path.is_file():
+        commands.append(
+            (
+                "prepare_activations",
+                [
+                    args.python,
+                    "cache-llama-activations.py",
+                    str(args.model_path),
+                    "--wbits",
+                    "4",
+                    "--nsamples",
+                    "1",
+                    "--seqlen",
+                    str(args.seqlen),
+                    "--maxseqlen",
+                    str(args.seqlen),
+                    "--dataset_source",
+                    args.dataset_source,
+                    "--quantizer-path",
+                    str(quantizer_path),
+                    "--output-path",
+                    str(activation_path),
+                ],
+                BENCHMARK_DIR,
+                activation_path,
+            )
+        )
+    return commands
 
 
 def select_experiments(only: Iterable[str], exclude: Iterable[str]) -> List[Experiment]:
@@ -348,6 +451,15 @@ def main() -> int:
     parser.add_argument("--append", action="store_true", help="Append to an existing CSV instead of creating it")
     parser.add_argument("--plot", action="store_true", help="Create summary.csv and benchmark_summary.png after runs")
     parser.add_argument("--python", default=sys.executable, help="Python executable used for benchmark scripts")
+    parser.add_argument("--prepare-artifacts", action="store_true", help="Generate Fisher info, quantizers.pickle, and activations before benchmarks")
+    parser.add_argument("--model-path", type=Path, default=None, help="Local HuggingFace-compatible LLaMA-7B checkpoint")
+    parser.add_argument("--fisher-path", type=Path, default=None, help="Fisher output directory (default: OUTPUT_DIR/fisher)")
+    parser.add_argument("--fisher-num-examples", type=int, default=16, help="Calibration examples for Fisher/quantizer generation")
+    parser.add_argument("--seqlen", type=int, choices=(2048,), default=2048, help="Calibration and activation sequence length")
+    parser.add_argument("--dataset-source", choices=("hf", "modelscope"), default="modelscope", help="Dataset backend for artifact preparation")
+    parser.add_argument("--gradient-python", type=Path, default=None, help="Python executable for gradients environment")
+    parser.add_argument("--quant-python", type=Path, default=None, help="Python executable for quant environment")
+    parser.add_argument("--force-artifacts", action="store_true", help="Regenerate artifacts even when outputs already exist")
     args = parser.parse_args()
 
     if args.list:
@@ -363,6 +475,18 @@ def main() -> int:
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = (args.csv or output_dir / "results.csv").resolve()
+    fisher_path = (args.fisher_path or output_dir / "fisher").resolve()
+    quantizer_path = BENCHMARK_DIR / "quantizers.pickle"
+    activation_path = BENCHMARK_DIR / f"activations-seqlen{args.seqlen}.pickle"
+    if args.gradient_python is None:
+        args.gradient_python = Path(args.python)
+    if args.quant_python is None:
+        args.quant_python = Path(args.python)
+
+    if args.model_path is not None:
+        args.model_path = args.model_path.resolve()
+    args.gradient_python = args.gradient_python.resolve()
+    args.quant_python = args.quant_python.resolve()
 
     experiments = select_experiments(args.only, args.exclude)
     commands = [
@@ -374,8 +498,13 @@ def main() -> int:
     ]
     if args.dry_run:
         print(f"Output CSV: {csv_path}")
+        if args.prepare_artifacts:
+            for name, command, cwd, output_path in preparation_commands(
+                args, fisher_path, quantizer_path, activation_path
+            ):
+                print(f"PREP {name:20s} cwd={cwd} output={output_path}\n      {' '.join(command)}")
         for experiment, command in commands:
-            missing = missing_prerequisites(experiment, not args.no_prerequisite_check)
+            missing = missing_prerequisites(experiment, not args.no_prerequisite_check and not args.prepare_artifacts)
             state = "SKIP" if missing else "RUN"
             print(f"{state:4s} {' '.join(command)}")
         return 0
@@ -392,6 +521,47 @@ def main() -> int:
         writer = csv.DictWriter(csv_file, fieldnames=csv_fields, extrasaction="ignore")
         if should_write_header:
             writer.writeheader()
+
+        if args.prepare_artifacts:
+            for name, command, cwd, output_path in preparation_commands(
+                args, fisher_path, quantizer_path, activation_path
+            ):
+                run_id = f"{timestamp}-{name}"
+                timestamp_value = dt.datetime.now().isoformat(timespec="seconds")
+                display_command = " ".join(command)
+                print(f"\n[runner] {name}\n[runner] cwd={cwd}\n[runner] {display_command}\n", flush=True)
+                raw_path = output_dir / f"{name}.log"
+                returncode, output, wall_time = run_process(command, args.timeout, cwd=cwd)
+                raw_path.write_text(output, encoding="utf-8")
+                try:
+                    raw_relative = str(raw_path.relative_to(BENCHMARK_DIR))
+                except ValueError:
+                    raw_relative = str(raw_path)
+                status = "PASS" if returncode == 0 else "FAIL"
+                if returncode != 0:
+                    failures += 1
+                writer.writerow(
+                    {
+                        "timestamp": timestamp_value,
+                        "run_id": run_id,
+                        "repeat": 1,
+                        "experiment": name,
+                        "metric_name": "run.wall_time",
+                        "metric_value": f"{wall_time:.9f}",
+                        "metric_unit": "s",
+                        "context": str(output_path),
+                        "status": status,
+                        "returncode": returncode,
+                        "wall_time_seconds": f"{wall_time:.9f}",
+                        "command": display_command,
+                        "raw_output": raw_relative,
+                    }
+                )
+                csv_file.flush()
+                print(f"\n[runner] {status}; returncode={returncode}; log={raw_relative}\n", flush=True)
+                if returncode != 0:
+                    print(f"[runner] stopping; artifact generation failed for {name}", flush=True)
+                    return 1
 
         for repeat in range(1, args.repeat + 1):
             for experiment, command in commands:

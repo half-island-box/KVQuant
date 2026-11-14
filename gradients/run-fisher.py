@@ -54,6 +54,7 @@ class DataArguments:
     num_examples: int = field(default=16, metadata={"help": "Number of calibration examples"})
     seqlen: int = field(default=2048)
     maxseqlen: int = field(default=32768)
+    dataset_source: str = field(default="hf", metadata={"help": "Dataset backend: hf or modelscope"})
 
 
 @dataclass
@@ -213,11 +214,23 @@ def train():
     if data_args.dataset == "c4":
         from datautils import get_loaders
         print("Calibration with C4 ")
-        dataloader, testloader = get_loaders(data_args.dataset,  model=model_args.model_name_or_path, seqlen=data_args.seqlen, seed=0)
+        dataloader, testloader = get_loaders(
+            data_args.dataset,
+            model=model_args.model_name_or_path,
+            seqlen=data_args.seqlen,
+            seed=0,
+            dataset_source=data_args.dataset_source,
+        )
     elif data_args.dataset == "wikitext2":
         from datautils import get_loaders
         print("Calibration with Wikitext2 ")
-        dataloader, testloader = get_loaders(data_args.dataset,  model=model_args.model_name_or_path, seqlen=data_args.seqlen, seed=0)
+        dataloader, testloader = get_loaders(
+            data_args.dataset,
+            model=model_args.model_name_or_path,
+            seqlen=data_args.seqlen,
+            seed=0,
+            dataset_source=data_args.dataset_source,
+        )
     else:
         raise NotImplementedError("Please define your own dataset here")
 
