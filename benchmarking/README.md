@@ -104,4 +104,4 @@ python run_all.py \
 
 It sequentially generates Fisher information, `quantizers.pickle`, and `activations-seqlen2048.pickle`, then runs the benchmark experiments. Existing artifacts are reused unless `--force-artifacts` is passed.
 
-`--model-name` accepts a project model name, a ModelScope model ID, or an existing local directory. The default `llama-7b` alias currently resolves to ModelScope model `LLM-Research/Llama-2-7b-hf`. If the value is not already a local directory, the runner downloads it into `benchmarking/modelscope_models/` with ModelScope and passes the resulting local checkpoint path to all stage scripts.
+`--model-name` accepts a project model name, a ModelScope model ID, or an existing local directory. The default `llama-7b` alias currently resolves to ModelScope model `LLM-Research/Llama-2-7b`. If the value is not already a local directory, the runner downloads it into `benchmarking/modelscope_models/` with ModelScope and passes the resulting local checkpoint path to all stage scripts.

@@ -46,12 +46,13 @@ class Experiment:
 
 
 MODEL_MODELSCOPE_IDS = {
-    "llama-7b": "LLM-Research/Llama-2-7b-hf",
-    "llama1-7b": "AI-ModelScope/llama-7b-hf",
-    "llama-1-7b": "AI-ModelScope/llama-7b-hf",
-    "llama2-7b": "LLM-Research/Llama-2-7b-hf",
-    "llama-2-7b": "LLM-Research/Llama-2-7b-hf",
-    "llama-2-7b-hf": "LLM-Research/Llama-2-7b-hf",
+    "llama-7b": "LLM-Research/Llama-2-7b",
+    "llama2-7b": "LLM-Research/Llama-2-7b",
+    "llama-2-7b": "LLM-Research/Llama-2-7b",
+    "llama-2-7b-hf": "LLM-Research/Llama-2-7b",
+    "llama2-7b-chat": "LLM-Research/Llama-2-7b-chat",
+    "llama-2-7b-chat": "LLM-Research/Llama-2-7b-chat",
+    "llama-2-7b-chat-hf": "LLM-Research/Llama-2-7b-chat",
 }
 
 
