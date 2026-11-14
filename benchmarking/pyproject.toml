@@ -19,4 +19,7 @@ dependencies = [
     "datasets"
 ]
 
+[project.optional-dependencies]
+plotting = ["matplotlib>=3.7"]
+
 [tool.setuptools.packages.find]

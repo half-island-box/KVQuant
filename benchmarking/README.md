@@ -33,3 +33,46 @@ CUDA_VISIBLE_DEVICES=0 python cache-llama-activations.py <path-to-llama-7b-hf> -
 
 Assuming the activations and the quantizers are stored in "activations.pickle" and "quantizers.pickle", you can run the kernel benchmarks by running the python scripts in the "scripts" folder.
 
+
+## Batch benchmark runner
+
+`run_all.py` sequentially runs the current CUDA kernel experiments, captures each raw profiler table to a log, and converts profiler/stdout metrics to a long-form CSV. It also records runner wall time and whether the experiment passed, failed, or was skipped because prerequisite artifacts are missing.
+
+Before running the KVQuant key/value experiments, ensure these files exist in the `benchmarking/` directory:
+
+```bash
+quantizers.pickle
+activations-seqlen2048.pickle
+```
+
+List the available experiments:
+
+```bash
+python run_all.py --list
+```
+
+Dry-run all experiments and show prerequisite checks:
+
+```bash
+python run_all.py --dry-run
+```
+
+If you want the generated dashboard, install the optional plotting dependency first:
+
+```bash
+pip install -e ".[plotting]"
+```
+
+Run everything, write `benchmark_results/<timestamp>/results.csv`, summarize metrics into `summary.csv`, and draw `benchmark_summary.png`:
+
+```bash
+python run_all.py --plot
+```
+
+Useful options include `--only NAME`, `--exclude NAME`, `--repeat N`, `--timeout SECONDS`, `--stop-on-failure`, and `--append`. To summarize an existing CSV later:
+
+```bash
+python summarize_benchmarks.py benchmark_results/<timestamp>/results.csv
+```
+
+The dashboard reports mean runner wall time and the largest `cuda_time_avg` entry per run. Average per-call CUDA time is used because the experiments issue different numbers of kernel invocations; summing profiler rows would double-count parent/child entries and would not be directly comparable. The complete per-kernel data remains available in `results.csv`.
