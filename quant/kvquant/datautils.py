@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -34,31 +35,33 @@ MODELSCOPE_WIKITEXT2_DATASET = os.environ.get("KVQUANT_MODELSCOPE_WIKITEXT2_DATA
 
 def _load_wikitext2_split(split: str, dataset_source: str):
     if dataset_source == "modelscope":
-        try:
-            from modelscope.msdatasets import MsDataset
-        except ImportError as exc:
-            raise RuntimeError(
-                "dataset_source='modelscope' requires the modelscope package; "
-                "install it with `pip install modelscope`"
-            ) from exc
+        # ModelScope's wikitext repository is backed by an old HuggingFace
+        # datasets script. datasets>=3 removed support for script datasets, so
+        # read the underlying ModelScope Open Data zip file directly. The file
+        # is cached in a user-level cache and shared by all KVQuant stages.
+        import urllib.request
+        import zipfile
 
-        load_kwargs = {
-            "dataset_name": MODELSCOPE_WIKITEXT2_DATASET,
-            "subset_name": "wikitext-2-raw-v1",
-            "split": split,
-        }
-        candidates = [load_kwargs, {key: value for key, value in load_kwargs.items() if key != "subset_name"}]
-        errors = []
-        for kwargs in candidates:
-            try:
-                dataset = MsDataset.load(**kwargs)
-                return dataset.to_hf_dataset() if hasattr(dataset, "to_hf_dataset") else dataset
-            except Exception as exc:
-                errors.append(exc)
-        raise RuntimeError(
-            f"Unable to load {MODELSCOPE_WIKITEXT2_DATASET} from ModelScope; "
-            "set KVQUANT_MODELSCOPE_WIKITEXT2_DATASET to a valid ModelScope wikitext dataset ID"
-        ) from errors[-1]
+        dataset_name = "wikitext-2-raw-v1"
+        cache_dir = Path.home() / ".cache" / "kvquant" / "modelscope" / dataset_name
+        archive_path = cache_dir / f"{dataset_name}.zip"
+        if not archive_path.is_file():
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            temporary_path = cache_dir / f"{dataset_name}.zip.tmp"
+            urllib.request.urlretrieve(
+                f"https://modelscope-open.oss-cn-hangzhou.aliyuncs.com/wikitext/{dataset_name}.zip",
+                temporary_path,
+            )
+            temporary_path.replace(archive_path)
+
+        split_file = {
+            "train": "wiki.train.raw",
+            "validation": "wiki.valid.raw",
+            "test": "wiki.test.raw",
+        }[split]
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            lines = archive.read(f"wikitext-2-raw/{split_file}").decode("utf-8").splitlines()
+        return {"text": lines}
 
     from datasets import load_dataset
     return load_dataset("wikitext", "wikitext-2-raw-v1", split=split)

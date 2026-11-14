@@ -79,17 +79,15 @@ The dashboard reports mean runner wall time and the largest `cuda_time_avg` entr
 
 ### Generate benchmark artifacts through ModelScope
 
-If HuggingFace is unreachable, the wikitext2 loader can use ModelScope. Install ModelScope in each environment that loads calibration data:
+If HuggingFace is unreachable, the wikitext2 loader can use ModelScope. Pass `--dataset_source modelscope` to `run-fisher.py`, `llama_simquant.py`, or `cache-llama-activations.py`. By default `run_all.py --prepare-artifacts` uses ModelScope.
 
-```bash
-pip install modelscope
+The ModelScope wikitext repository is an old script-based datasets repository, while `datasets>=3` no longer supports dataset scripts. KVQuant therefore downloads the underlying ModelScope `wikitext-2-raw-v1.zip` directly and reads its train/test raw files. The archive is cached at:
+
+```text
+~/.cache/kvquant/modelscope/wikitext-2-raw-v1/wikitext-2-raw-v1.zip
 ```
 
-Then pass `--dataset_source modelscope` to `run-fisher.py`, `llama_simquant.py`, or `cache-llama-activations.py`. By default `run_all.py --prepare-artifacts` uses ModelScope. The ModelScope dataset ID defaults to `modelscope/wikitext`; override it with:
-
-```bash
-export KVQUANT_MODELSCOPE_WIKITEXT2_DATASET=<valid-modelscope-wikitext2-dataset-id>
-```
+The `modelscope` package is still required for automatic model downloads through `run_all.py`, but it is no longer required in the gradient and quant environments solely for wikitext loading.
 
 The integrated artifact generation command is:
 
